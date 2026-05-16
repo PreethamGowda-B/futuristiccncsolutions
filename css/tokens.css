@@ -1,0 +1,66 @@
+:root {
+  /* Colors */
+  --color-bg:           #0A0A0A;
+  --color-bg-secondary: #111111;
+  --color-accent:       #00D4FF;
+  --color-accent-glow:  rgba(0, 212, 255, 0.6);
+  --color-accent-dim:   rgba(0, 212, 255, 0.15);
+  --color-accent-border:rgba(0, 212, 255, 0.2);
+  --color-silver:       #C0C0C0;
+  --color-silver-light: #E8E8E8;
+  --color-text-primary: #FFFFFF;
+  --color-text-secondary: #C0C0C0;
+  --color-error:        #FF4444;
+  --color-success:      #00FF88;
+
+  /* Glass */
+  --glass-bg:           rgba(255, 255, 255, 0.05);
+  --glass-border:       1px solid rgba(0, 212, 255, 0.2);
+  --glass-blur:         blur(20px);
+
+  /* Typography */
+  --font-heading:       'Orbitron', sans-serif;
+  --font-body:          'Inter', sans-serif;
+  --font-size-hero:     clamp(2.5rem, 6vw, 5rem);
+  --font-size-h2:       clamp(1.8rem, 4vw, 3rem);
+  --font-size-h3:       clamp(1.2rem, 2.5vw, 1.8rem);
+  --font-size-body:     1rem;
+  --font-size-small:    0.875rem;
+
+  /* Spacing */
+  --section-padding:    clamp(4rem, 8vw, 8rem);
+  --container-max:      1400px;
+  --gap-card:           1.5rem;
+
+  /* Animation */
+  --transition-fast:    200ms ease;
+  --transition-medium:  300ms ease;
+  --transition-slow:    600ms ease;
+  --glow-shadow:        0 0 20px rgba(0, 212, 255, 0.6);
+
+  /* Z-index layers */
+  --z-preloader:        1000;
+  --z-cursor:           999;
+  --z-nav:              100;
+  --z-modal:            200;
+  --z-canvas:           1;
+  --z-content:          10;
+
+  /* Grid Color */
+  --color-grid:         rgba(0, 212, 255, 0.05);
+}
+
+[data-theme="light"] {
+  --color-bg:           #F5F5F7;
+  --color-bg-secondary: #FFFFFF;
+  --color-accent:       #007AFF;
+  --color-accent-glow:  rgba(0, 122, 255, 0.4);
+  --color-accent-dim:   rgba(0, 122, 255, 0.1);
+  --color-accent-border:rgba(0, 122, 255, 0.2);
+  --color-text-primary: #1D1D1F;
+  --color-text-secondary:#424245;
+  --color-grid:         rgba(0, 122, 255, 0.08);
+  --glass-bg:           rgba(255, 255, 255, 0.7);
+  --glass-border:       1px solid rgba(0, 122, 255, 0.1);
+  --glow-shadow:        0 8px 30px rgba(0, 0, 0, 0.08);
+}

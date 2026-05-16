@@ -1,0 +1,135 @@
+/* ==========================================================================
+   animations.css — CSS Keyframe Animations
+   Futuristic CNC Solutions
+   ========================================================================== */
+
+/* --------------------------------------------------------------------------
+   Industrial Grid Background
+   Applied via .grid-bg class on body or section elements
+   Creates a subtle neon grid pattern at 5% opacity
+   -------------------------------------------------------------------------- */
+
+.grid-bg {
+  background-image:
+    repeating-linear-gradient(
+      0deg,
+      transparent,
+      transparent 59px,
+      var(--color-grid) 59px,
+      var(--color-grid) 60px
+    ),
+    repeating-linear-gradient(
+      90deg,
+      transparent,
+      transparent 59px,
+      var(--color-grid) 59px,
+      var(--color-grid) 60px
+    );
+  background-size: 60px 60px;
+  background-attachment: fixed;
+}
+
+/* --------------------------------------------------------------------------
+   @keyframes glowPulse
+   Neon glow breathing effect for accent elements
+   -------------------------------------------------------------------------- */
+
+@keyframes glowPulse {
+  0%, 100% {
+    box-shadow: 0 0 10px rgba(0, 212, 255, 0.3);
+  }
+  50% {
+    box-shadow:
+      0 0 30px rgba(0, 212, 255, 0.8),
+      0 0 60px rgba(0, 212, 255, 0.4);
+  }
+}
+
+.glow-pulse {
+  animation: glowPulse 3s ease-in-out infinite;
+}
+
+/* --------------------------------------------------------------------------
+   @keyframes floatDrift
+   Gentle vertical floating for decorative elements
+   -------------------------------------------------------------------------- */
+
+@keyframes floatDrift {
+  0%, 100% {
+    transform: translateY(0px);
+  }
+  50% {
+    transform: translateY(-15px);
+  }
+}
+
+.float-drift {
+  animation: floatDrift 4s ease-in-out infinite;
+}
+
+/* --------------------------------------------------------------------------
+   @keyframes chevronBounce
+   Scroll indicator chevron bounce animation
+   -------------------------------------------------------------------------- */
+
+@keyframes chevronBounce {
+  0%, 100% {
+    transform: translateY(0);
+    opacity: 1;
+  }
+  50% {
+    transform: translateY(8px);
+    opacity: 0.5;
+  }
+}
+
+.scroll-indicator {
+  animation: chevronBounce 1.5s ease-in-out infinite;
+}
+
+/* --------------------------------------------------------------------------
+   @keyframes fadeInUp
+   Entrance animation — fade in while rising from below
+   -------------------------------------------------------------------------- */
+
+@keyframes fadeInUp {
+  from {
+    opacity: 0;
+    transform: translateY(30px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* --------------------------------------------------------------------------
+   @keyframes neonFlicker
+   Subtle opacity flicker for neon text effects
+   -------------------------------------------------------------------------- */
+
+@keyframes neonFlicker {
+  0%   { opacity: 1; }
+  19%  { opacity: 1; }
+  21%  { opacity: 0.85; }
+  23%  { opacity: 1; }
+  25%  { opacity: 0.9; }
+  54%  { opacity: 1; }
+  56%  { opacity: 0.88; }
+  100% { opacity: 1; }
+}
+
+/* --------------------------------------------------------------------------
+   Accessibility: prefers-reduced-motion
+   Disables all keyframe animations and transitions for users who have
+   requested reduced motion in their OS/browser settings
+   -------------------------------------------------------------------------- */
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation: none !important;
+    transition: none !important;
+  }
+}

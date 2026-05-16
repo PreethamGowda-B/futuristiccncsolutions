@@ -1,0 +1,65 @@
+/* ==========================================================================
+   Preloader
+   Fullscreen overlay shown during initial asset loading.
+   GSAP controls the progress bar width and percentage counter updates.
+   ========================================================================== */
+
+#preloader {
+  position: fixed;
+  inset: 0;
+  background: var(--color-bg);
+  z-index: var(--z-preloader);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2rem;
+}
+
+/* Company wordmark */
+.preloader-logo {
+  font-family: var(--font-heading);
+  font-size: clamp(1.5rem, 4vw, 2.5rem);
+  color: var(--color-text-primary);
+  letter-spacing: 0.15em;
+  text-transform: uppercase;
+}
+
+/* "CNC" portion rendered in accent color */
+.preloader-logo span {
+  color: var(--color-accent);
+}
+
+/* Progress bar track */
+.preloader-bar-container {
+  width: min(400px, 80vw);
+  height: 2px;
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: 1px;
+  overflow: hidden;
+}
+
+/* Animated fill — GSAP drives the width from 0% → 100% */
+#preloader-bar {
+  height: 100%;
+  width: 0%;
+  background: linear-gradient(90deg, var(--color-accent), var(--color-accent-glow));
+  border-radius: 1px;
+  box-shadow: 0 0 10px var(--color-accent);
+  transition: width 0.1s ease;
+}
+
+/* Percentage counter wrapper */
+.preloader-percent-container {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+}
+
+/* Numeric percentage value */
+#preloader-percent {
+  font-family: var(--font-heading);
+  font-size: 0.875rem;
+  color: var(--color-accent);
+  letter-spacing: 0.1em;
+}

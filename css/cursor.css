@@ -1,0 +1,97 @@
+/* ============================================================
+   cursor.css — Custom magnetic cursor styles
+   Applies only on desktop (non-touch) devices.
+   DOM elements: #cursor-dot and #cursor-ring
+   ============================================================ */
+
+/* Hide the default system cursor on desktop */
+@media (pointer: fine) {
+  body {
+    cursor: none;
+  }
+
+  a,
+  button,
+  [data-magnetic],
+  input,
+  textarea,
+  select,
+  label {
+    cursor: none;
+  }
+}
+
+/* ── Shared base ─────────────────────────────────────────── */
+#cursor-dot,
+#cursor-ring {
+  position: fixed;
+  top: 0;
+  left: 0;
+  border-radius: 50%;
+  pointer-events: none;
+  z-index: var(--z-cursor, 999);
+  transform: translate(-50%, -50%);
+  will-change: transform, width, height, opacity;
+
+  /* Hidden on touch / coarse-pointer devices by default;
+     shown only when a fine pointer (mouse) is detected */
+  display: none;
+}
+
+@media (pointer: fine) {
+  #cursor-dot,
+  #cursor-ring {
+    display: block;
+  }
+}
+
+/* ── Cursor dot (16px filled neon circle) ────────────────── */
+#cursor-dot {
+  width: 16px;
+  height: 16px;
+  background: var(--color-accent, #00d4ff);
+  transition:
+    width 200ms ease,
+    height 200ms ease,
+    background 200ms ease,
+    border-radius 200ms ease,
+    opacity 200ms ease;
+}
+
+/* ── Cursor ring (40px outlined ring) ────────────────────── */
+#cursor-ring {
+  width: 40px;
+  height: 40px;
+  background: transparent;
+  border: 1px solid var(--color-accent, #00d4ff);
+  transition:
+    width 200ms ease,
+    height 200ms ease,
+    background 200ms ease,
+    border-color 200ms ease,
+    opacity 200ms ease;
+}
+
+/* ── Hover state ─────────────────────────────────────────── */
+/* Applied via body.cursor-hover (set by cursor.js) */
+body.cursor-hover #cursor-ring {
+  width: 60px;
+  height: 60px;
+  background: rgba(0, 212, 255, 0.15);
+}
+
+/* ── Text cursor state ───────────────────────────────────── */
+/* Applied via body.cursor-text when hovering over text content */
+body.cursor-text #cursor-dot {
+  width: 2px;
+  height: 20px;
+  border-radius: 1px;
+  background: var(--color-accent, #00d4ff);
+}
+
+/* ── Hidden state ────────────────────────────────────────── */
+/* Applied via body.cursor-hidden (e.g. when cursor leaves window) */
+body.cursor-hidden #cursor-dot,
+body.cursor-hidden #cursor-ring {
+  opacity: 0;
+}

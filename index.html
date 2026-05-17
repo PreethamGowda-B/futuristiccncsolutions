@@ -398,13 +398,7 @@
           </div>
         </div>
 
-        <!-- Spec panel (slide-in from right on machine click) -->
-        <div id="spec-panel" role="dialog" aria-modal="true" aria-label="Machine Specifications" aria-hidden="true">
-          <button class="spec-panel-close" aria-label="Close specifications panel">✕</button>
-          <div id="spec-panel-content">
-            <!-- Populated by JS -->
-          </div>
-        </div>
+        <!-- Spec panel (slide-in from right on machine click) — moved to body level in HTML -->
       </section>
 
       <!-- ═══════════════════════════════════════════════════════════
@@ -843,6 +837,14 @@
 
     </div><!-- /#smooth-content -->
   </div><!-- /#smooth-wrapper -->
+
+  <!-- Spec panel — must be outside #smooth-wrapper (which is position:fixed) so it renders as a true viewport overlay -->
+  <div id="spec-panel" role="dialog" aria-modal="true" aria-label="Machine Specifications" aria-hidden="true">
+    <button class="spec-panel-close" aria-label="Close specifications panel">✕</button>
+    <div id="spec-panel-content">
+      <!-- Populated by JS -->
+    </div>
+  </div>
 
   <!-- WhatsApp Animated Widget -->
   <div class="whatsapp-widget">

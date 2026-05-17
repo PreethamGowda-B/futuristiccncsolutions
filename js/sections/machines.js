@@ -1,4 +1,4 @@
-import { onMachineHover, onMachineLeave, onMachineClick } from '../machines.js';
+import { onMachineHover, onMachineLeave, onMachineClick, closeSpecPanel } from '../machines.js';
 
 export function init() {
   if (typeof gsap === 'undefined' || typeof ScrollTrigger === 'undefined') return;
@@ -22,7 +22,7 @@ export function init() {
     vp.addEventListener('mouseenter', () => onMachineHover(idx));
     vp.addEventListener('mouseleave', () => onMachineLeave(idx));
     vp.addEventListener('click', () => onMachineClick(idx));
-    
+
     vp.addEventListener('keydown', (e) => {
       if (e.key === 'Enter' || e.key === ' ') {
         e.preventDefault();
@@ -31,15 +31,9 @@ export function init() {
     });
   });
 
+  // Close button — use shared closeSpecPanel which also restores body overflow
   const closeBtn = document.querySelector('.spec-panel-close');
   if (closeBtn) {
-    closeBtn.addEventListener('click', () => {
-      const panel = document.getElementById('spec-panel');
-      if (panel) {
-        gsap.to(panel, { x: '100%', duration: 0.4, ease: 'power3.in', onComplete: () => {
-          panel.setAttribute('aria-hidden', 'true');
-        }});
-      }
-    });
+    closeBtn.addEventListener('click', () => closeSpecPanel());
   }
 }

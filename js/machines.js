@@ -41,8 +41,10 @@ const machineRenderers = [];  // THREE.WebGLRenderer per canvas
 const machineCameras  = [];   // THREE.PerspectiveCamera per canvas
 const rotationSpeeds  = [];   // current Y-rotation speed per machine
 const rimLights       = [];   // neon rim PointLight per machine (null when inactive)
+const visibleFlags    = [];   // whether each canvas is in the viewport
 
 const BASE_SPEED = 0.003;     // radians per frame at 60fps equivalent
+const isMobile   = window.innerWidth < 768 || navigator.hardwareConcurrency < 4;
 
 // ─── initMachines ─────────────────────────────────────────────────────────────
 /**
@@ -52,12 +54,20 @@ const BASE_SPEED = 0.003;     // radians per frame at 60fps equivalent
 export function initMachines() {
   const canvases = document.querySelectorAll('.machine-canvas');
 
+  // IntersectionObserver to pause rendering of off-screen canvases
+  const observer = new IntersectionObserver((entries) => {
+    entries.forEach(entry => {
+      const idx = Array.from(canvases).indexOf(entry.target);
+      if (idx >= 0) visibleFlags[idx] = entry.isIntersecting;
+    });
+  }, { threshold: 0.1 });
+
   canvases.forEach((canvas, idx) => {
-    // Per-machine renderer
-    const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: true });
-    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    // Per-machine renderer — disable shadows and cap pixel ratio for performance
+    const renderer = new THREE.WebGLRenderer({ canvas, antialias: !isMobile, alpha: true });
+    renderer.setPixelRatio(isMobile ? 1 : Math.min(window.devicePixelRatio, 2));
     renderer.setSize(canvas.clientWidth || 400, canvas.clientHeight || 300);
-    renderer.shadowMap.enabled = true;
+    renderer.shadowMap.enabled = false;  // shadows disabled — too expensive for 3 simultaneous renderers
     renderer.toneMapping = THREE.ACESFilmicToneMapping;
     machineRenderers.push(renderer);
 
@@ -65,11 +75,11 @@ export function initMachines() {
     const scene = new THREE.Scene();
     machineScenes.push(scene);
 
-    // Lights
-    scene.add(new THREE.AmbientLight(0xffffff, 1.2));
-    const dir = new THREE.DirectionalLight(0xffffff, 2.5);
+    // Lights — simplified for performance
+    scene.add(new THREE.AmbientLight(0xffffff, 1.5));
+    const dir = new THREE.DirectionalLight(0xffffff, 2.0);
     dir.position.set(5, 10, 5);
-    dir.castShadow = true;
+    dir.castShadow = false;
     scene.add(dir);
     const neon = new THREE.PointLight(0x00D4FF, 2, 20);
     neon.position.set(-3, 3, 3);
@@ -90,6 +100,20 @@ export function initMachines() {
 
     rotationSpeeds.push(BASE_SPEED);
     rimLights.push(null);
+    visibleFlags.push(true);
+
+    // Observe for visibility
+    observer.observe(canvas);
+  });
+
+  // Wire spec panel close button
+  const closeBtn = document.querySelector('.spec-panel-close');
+  if (closeBtn) {
+    closeBtn.addEventListener('click', _closeSpecPanel);
+  }
+  // Close on Escape key
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') _closeSpecPanel();
   });
 }
 
@@ -148,9 +172,15 @@ export function onMachineClick(index) {
     </div>
   `;
 
-  // Slide in from right using GSAP
+  // Ensure panel is visible before animating
   panel.setAttribute('aria-hidden', 'false');
-  if (window.gsap) {
+  panel.style.display = 'block';
+
+  // Prevent body scroll while panel is open
+  document.body.style.overflow = 'hidden';
+
+  // Slide in from right using GSAP
+  if (typeof gsap !== 'undefined') {
     gsap.fromTo(panel,
       { x: '100%' },
       { x: '0%', duration: 0.4, ease: 'power3.out' }
@@ -160,13 +190,43 @@ export function onMachineClick(index) {
   }
 }
 
+// ─── _closeSpecPanel ─────────────────────────────────────────────────────────
+export function closeSpecPanel() {
+  const panel = document.getElementById('spec-panel');
+  if (!panel || panel.getAttribute('aria-hidden') === 'true') return;
+
+  if (typeof gsap !== 'undefined') {
+    gsap.to(panel, {
+      x: '100%',
+      duration: 0.3,
+      ease: 'power3.in',
+      onComplete: () => {
+        panel.setAttribute('aria-hidden', 'true');
+        panel.style.display = '';
+        document.body.style.overflow = '';
+      },
+    });
+  } else {
+    panel.style.transform = 'translateX(100%)';
+    panel.setAttribute('aria-hidden', 'true');
+    document.body.style.overflow = '';
+  }
+}
+
+function _closeSpecPanel() {
+  closeSpecPanel();
+}
+
 // ─── updateMachines ───────────────────────────────────────────────────────────
 /**
  * Per-frame update: rotate each machine and re-render its canvas.
+ * Skips canvases that are not currently visible in the viewport.
  * @param {number} delta  Seconds since last frame.
  */
 export function updateMachines(delta) {
   machineGroups.forEach((group, idx) => {
+    // Skip rendering if canvas is off-screen — major perf win
+    if (!visibleFlags[idx]) return;
     group.rotation.y += rotationSpeeds[idx];
     machineRenderers[idx].render(machineScenes[idx], machineCameras[idx]);
   });

@@ -204,3 +204,15 @@ body.no-smoother #smooth-wrapper {
 body.no-smoother #smooth-content {
   position: static;
 }
+
+/* On mobile/touch, ScrollSmoother is skipped — use normal document flow */
+@media (max-width: 767px) {
+  #smooth-wrapper {
+    position: static;
+    height: auto;
+    overflow: visible;
+  }
+  #smooth-content {
+    position: static;
+  }
+}

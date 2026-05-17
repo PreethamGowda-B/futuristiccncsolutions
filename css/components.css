@@ -387,14 +387,18 @@ textarea.error {
   right: 0;
   width: min(400px, 90vw);
   height: 100vh;
-  background: var(--glass-bg);
+  height: 100dvh;
+  background: rgba(10, 10, 10, 0.97);
   backdrop-filter: blur(20px);
   -webkit-backdrop-filter: blur(20px);
-  border-left: var(--glass-border);
+  border-left: 1px solid rgba(0, 212, 255, 0.2);
   padding: 2rem;
-  z-index: var(--z-modal);
+  z-index: 9999;          /* above smooth-wrapper stacking context */
   transform: translateX(100%);
   overflow-y: auto;
+  overflow-x: hidden;
+  display: none;          /* hidden by default; JS sets display:block before animating */
+  will-change: transform;
 }
 
 /* --------------------------------------------------------------------------
@@ -970,6 +974,15 @@ textarea.error {
   width: 100%;
   height: 300px;
   display: block;
+}
+
+@media (max-width: 767px) {
+  .machine-canvas {
+    height: 220px;
+  }
+  .machine-grid {
+    gap: 1.25rem;
+  }
 }
 
 .machine-info {

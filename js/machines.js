@@ -1,7 +1,14 @@
 /**
  * machines.js — Machine Showcase 3D Models
- * Manages three interactive CNC machine representations using Three.js.
- * Falls back to procedural geometry if GLTF models are unavailable.
+ *
+ * ARCHITECTURE: Single shared WebGLRenderer using scissor + viewport rendering.
+ * Instead of 3 separate WebGL contexts (which each consume GPU memory and
+ * driver overhead), one renderer draws into each canvas's screen region per
+ * frame. This cuts GPU context overhead by ~66% and is the standard approach
+ * for multi-canvas Three.js scenes.
+ *
+ * On mobile the 3D canvases are replaced with static CSS placeholders to
+ * eliminate WebGL overhead entirely on constrained devices.
  */
 
 import * as THREE from 'three';
@@ -14,7 +21,6 @@ const MACHINES = [
     axes:         '3-Axis / 5-Axis',
     spindleSpeed: '12,000 RPM',
     applications: ['Mold Making', 'Aerospace Parts', 'Automotive Components'],
-    geometry:     'procedural',
   },
   {
     id:           'hmc',
@@ -22,7 +28,6 @@ const MACHINES = [
     axes:         '4-Axis',
     spindleSpeed: '8,000 RPM',
     applications: ['Heavy Machining', 'Batch Production', 'Complex Housings'],
-    geometry:     'procedural',
   },
   {
     id:           'vtl',
@@ -30,117 +35,126 @@ const MACHINES = [
     axes:         '2-Axis',
     spindleSpeed: '3,000 RPM',
     applications: ['Large Diameter Parts', 'Flanges', 'Heavy Engineering'],
-    geometry:     'procedural',
   },
 ];
 
-// ─── Module state ─────────────────────────────────────────────────────────────
-const machineGroups   = [];   // THREE.Group per machine
-const machineScenes   = [];   // THREE.Scene per canvas
-const machineRenderers = [];  // THREE.WebGLRenderer per canvas
-const machineCameras  = [];   // THREE.PerspectiveCamera per canvas
-const rotationSpeeds  = [];   // current Y-rotation speed per machine
-const rimLights       = [];   // neon rim PointLight per machine (null when inactive)
-const visibleFlags    = [];   // whether each canvas is in the viewport
+// ─── Performance tier detection ───────────────────────────────────────────────
+// On mobile or low-core devices, skip WebGL entirely and show CSS placeholders.
+const isMobile = /Mobi|Android|iPhone|iPad/i.test(navigator.userAgent) ||
+                 window.innerWidth < 768;
+const isLowEnd = navigator.hardwareConcurrency <= 2;
+const useWebGL = !isMobile && !isLowEnd;
 
-const BASE_SPEED = 0.003;     // radians per frame at 60fps equivalent
-const isMobile   = window.innerWidth < 768 || navigator.hardwareConcurrency < 4;
+// ─── Module state ─────────────────────────────────────────────────────────────
+let sharedRenderer = null;      // single THREE.WebGLRenderer
+const scenes        = [];       // THREE.Scene per machine
+const cameras       = [];       // THREE.PerspectiveCamera per machine
+const groups        = [];       // THREE.Group per machine
+const rotSpeeds     = [];       // Y-rotation speed per machine
+const rimLights     = [];       // neon rim PointLight per machine
+const canvasEls     = [];       // HTMLCanvasElement references
+let   showcaseVisible = false;  // IntersectionObserver flag
+
+const BASE_SPEED = 0.003;
 
 // ─── initMachines ─────────────────────────────────────────────────────────────
-/**
- * Create a renderer/scene/camera for each .machine-canvas element and
- * build procedural machine geometry.
- */
 export function initMachines() {
-  const canvases = document.querySelectorAll('.machine-canvas');
+  const viewports = document.querySelectorAll('.machine-viewport');
 
-  // IntersectionObserver to pause rendering of off-screen canvases
-  const observer = new IntersectionObserver((entries) => {
-    entries.forEach(entry => {
-      const idx = Array.from(canvases).indexOf(entry.target);
-      if (idx >= 0) visibleFlags[idx] = entry.isIntersecting;
-    });
-  }, { threshold: 0.1 });
+  if (!useWebGL) {
+    // Mobile / low-end: replace canvases with lightweight CSS placeholders
+    _injectCSSFallbacks(viewports);
+    _wireSpecPanel();
+    return;
+  }
 
-  canvases.forEach((canvas, idx) => {
-    // Per-machine renderer — disable shadows and cap pixel ratio for performance
-    const renderer = new THREE.WebGLRenderer({ canvas, antialias: !isMobile, alpha: true });
-    renderer.setPixelRatio(isMobile ? 1 : Math.min(window.devicePixelRatio, 2));
-    renderer.setSize(canvas.clientWidth || 400, canvas.clientHeight || 300);
-    renderer.shadowMap.enabled = false;  // shadows disabled — too expensive for 3 simultaneous renderers
-    renderer.toneMapping = THREE.ACESFilmicToneMapping;
-    machineRenderers.push(renderer);
+  // Create ONE shared renderer — no canvas attached yet (we use setViewport/setScissor)
+  sharedRenderer = new THREE.WebGLRenderer({
+    antialias: false,   // off for performance; looks fine at normal viewing distance
+    alpha:     true,
+    powerPreference: 'high-performance',
+  });
+  sharedRenderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.5));
+  sharedRenderer.shadowMap.enabled = false;
+  sharedRenderer.toneMapping = THREE.ACESFilmicToneMapping;
+  sharedRenderer.autoClear = false; // we clear manually per viewport
 
-    // Per-machine scene
+  // Size the shared canvas to full window; it sits behind all machine-viewports
+  const sharedCanvas = sharedRenderer.domElement;
+  sharedCanvas.style.cssText = `
+    position: fixed;
+    top: 0; left: 0;
+    width: 100%; height: 100%;
+    pointer-events: none;
+    z-index: 5;
+  `;
+  document.body.appendChild(sharedCanvas);
+  _resizeSharedRenderer();
+
+  // Build a scene + camera + group per machine viewport
+  viewports.forEach((vp, idx) => {
+    const canvas = vp.querySelector('.machine-canvas');
+    canvasEls.push(canvas);
+
+    // Hide the individual canvas elements — rendering happens on sharedCanvas
+    if (canvas) canvas.style.display = 'none';
+
     const scene = new THREE.Scene();
-    machineScenes.push(scene);
-
-    // Lights — simplified for performance
     scene.add(new THREE.AmbientLight(0xffffff, 1.5));
     const dir = new THREE.DirectionalLight(0xffffff, 2.0);
     dir.position.set(5, 10, 5);
-    dir.castShadow = false;
     scene.add(dir);
-    const neon = new THREE.PointLight(0x00D4FF, 2, 20);
+    const neon = new THREE.PointLight(0x00D4FF, 1.5, 20);
     neon.position.set(-3, 3, 3);
     scene.add(neon);
+    scenes.push(scene);
 
-    // Per-machine camera
-    const w = canvas.clientWidth  || 400;
-    const h = canvas.clientHeight || 300;
-    const camera = new THREE.PerspectiveCamera(60, w / h, 0.1, 100);
+    const camera = new THREE.PerspectiveCamera(60, 1, 0.1, 100);
     camera.position.set(0, 1.5, 5);
     camera.lookAt(0, 0, 0);
-    machineCameras.push(camera);
+    cameras.push(camera);
 
-    // Build procedural machine group
     const group = _buildMachineGeometry(idx);
     scene.add(group);
-    machineGroups.push(group);
+    groups.push(group);
 
-    rotationSpeeds.push(BASE_SPEED);
+    rotSpeeds.push(BASE_SPEED);
     rimLights.push(null);
-    visibleFlags.push(true);
-
-    // Observe for visibility
-    observer.observe(canvas);
   });
 
-  // Wire spec panel close button
-  const closeBtn = document.querySelector('.spec-panel-close');
-  if (closeBtn) {
-    closeBtn.addEventListener('click', _closeSpecPanel);
+  // Pause rendering when machine showcase is off-screen
+  const section = document.getElementById('machine-showcase');
+  if (section) {
+    new IntersectionObserver(
+      ([entry]) => { showcaseVisible = entry.isIntersecting; },
+      { threshold: 0.05 }
+    ).observe(section);
   }
-  // Close on Escape key
-  document.addEventListener('keydown', (e) => {
-    if (e.key === 'Escape') _closeSpecPanel();
-  });
+
+  // Handle window resize
+  window.addEventListener('resize', _resizeSharedRenderer, { passive: true });
+
+  _wireSpecPanel();
 }
 
 // ─── onMachineHover ───────────────────────────────────────────────────────────
 export function onMachineHover(index) {
-  if (index < 0 || index >= machineGroups.length) return;
-
-  // 3× rotation speed
-  rotationSpeeds[index] = BASE_SPEED * 3;
-
-  // Add rim light if not already present
+  if (!useWebGL || index < 0 || index >= groups.length) return;
+  rotSpeeds[index] = BASE_SPEED * 3;
   if (!rimLights[index]) {
     const rim = new THREE.PointLight(0x00D4FF, 3, 10);
     rim.position.set(0, 0, -3);
-    machineGroups[index].add(rim);
+    groups[index].add(rim);
     rimLights[index] = rim;
   }
 }
 
 // ─── onMachineLeave ───────────────────────────────────────────────────────────
 export function onMachineLeave(index) {
-  if (index < 0 || index >= machineGroups.length) return;
-
-  rotationSpeeds[index] = BASE_SPEED;
-
+  if (!useWebGL || index < 0 || index >= groups.length) return;
+  rotSpeeds[index] = BASE_SPEED;
   if (rimLights[index]) {
-    machineGroups[index].remove(rimLights[index]);
+    groups[index].remove(rimLights[index]);
     rimLights[index].dispose?.();
     rimLights[index] = null;
   }
@@ -150,12 +164,11 @@ export function onMachineLeave(index) {
 export function onMachineClick(index) {
   if (index < 0 || index >= MACHINES.length) return;
 
-  const machine   = MACHINES[index];
-  const panel     = document.getElementById('spec-panel');
-  const content   = document.getElementById('spec-panel-content');
+  const machine = MACHINES[index];
+  const panel   = document.getElementById('spec-panel');
+  const content = document.getElementById('spec-panel-content');
   if (!panel || !content) return;
 
-  // Populate spec panel
   content.innerHTML = `
     <h3>${machine.name}</h3>
     <div class="spec-row">
@@ -172,34 +185,25 @@ export function onMachineClick(index) {
     </div>
   `;
 
-  // Ensure panel is visible before animating
   panel.setAttribute('aria-hidden', 'false');
   panel.style.display = 'block';
-
-  // Prevent body scroll while panel is open
   document.body.style.overflow = 'hidden';
 
-  // Slide in from right using GSAP
   if (typeof gsap !== 'undefined') {
-    gsap.fromTo(panel,
-      { x: '100%' },
-      { x: '0%', duration: 0.4, ease: 'power3.out' }
-    );
+    gsap.fromTo(panel, { x: '100%' }, { x: '0%', duration: 0.4, ease: 'power3.out' });
   } else {
     panel.style.transform = 'translateX(0)';
   }
 }
 
-// ─── _closeSpecPanel ─────────────────────────────────────────────────────────
+// ─── closeSpecPanel ───────────────────────────────────────────────────────────
 export function closeSpecPanel() {
   const panel = document.getElementById('spec-panel');
   if (!panel || panel.getAttribute('aria-hidden') === 'true') return;
 
   if (typeof gsap !== 'undefined') {
     gsap.to(panel, {
-      x: '100%',
-      duration: 0.3,
-      ease: 'power3.in',
+      x: '100%', duration: 0.3, ease: 'power3.in',
       onComplete: () => {
         panel.setAttribute('aria-hidden', 'true');
         panel.style.display = '';
@@ -213,85 +217,130 @@ export function closeSpecPanel() {
   }
 }
 
-function _closeSpecPanel() {
-  closeSpecPanel();
-}
-
 // ─── updateMachines ───────────────────────────────────────────────────────────
-/**
- * Per-frame update: rotate each machine and re-render its canvas.
- * Skips canvases that are not currently visible in the viewport.
- * @param {number} delta  Seconds since last frame.
- */
 export function updateMachines(delta) {
-  machineGroups.forEach((group, idx) => {
-    // Skip rendering if canvas is off-screen — major perf win
-    if (!visibleFlags[idx]) return;
-    group.rotation.y += rotationSpeeds[idx];
-    machineRenderers[idx].render(machineScenes[idx], machineCameras[idx]);
+  if (!useWebGL || !sharedRenderer || !showcaseVisible) return;
+
+  const renderer = sharedRenderer;
+  const dpr      = renderer.getPixelRatio();
+
+  renderer.clear();
+
+  const viewports = document.querySelectorAll('.machine-viewport');
+
+  viewports.forEach((vp, idx) => {
+    if (idx >= scenes.length) return;
+
+    // Rotate the group
+    groups[idx].rotation.y += rotSpeeds[idx];
+
+    // Get the viewport's position in the window
+    const rect = vp.getBoundingClientRect();
+
+    // Skip if off-screen
+    if (rect.bottom < 0 || rect.top > window.innerHeight ||
+        rect.right  < 0 || rect.left > window.innerWidth) return;
+
+    // Convert CSS pixels → physical pixels for scissor/viewport
+    const x      = Math.round(rect.left   * dpr);
+    const y      = Math.round((window.innerHeight - rect.bottom) * dpr);
+    const width  = Math.round(rect.width  * dpr);
+    const height = Math.round(rect.height * dpr);
+
+    if (width <= 0 || height <= 0) return;
+
+    // Update camera aspect
+    cameras[idx].aspect = rect.width / rect.height;
+    cameras[idx].updateProjectionMatrix();
+
+    renderer.setViewport(x, y, width, height);
+    renderer.setScissor(x, y, width, height);
+    renderer.setScissorTest(true);
+    renderer.clearDepth();
+    renderer.render(scenes[idx], cameras[idx]);
   });
+
+  renderer.setScissorTest(false);
 }
 
 // ─── enableOrbitControls ─────────────────────────────────────────────────────
-/**
- * Attach drag-rotate interaction to a machine canvas.
- * Uses a custom mouse/touch implementation (no OrbitControls dependency).
- * @param {HTMLCanvasElement} canvas
- * @param {number} index
- */
 export function enableOrbitControls(canvas, index) {
-  let isDragging = false;
-  let prevX = 0, prevY = 0;
+  // canvas param kept for API compatibility; we listen on the viewport element
+  const vp = document.querySelectorAll('.machine-viewport')[index];
+  if (!vp || !useWebGL) return;
 
-  function onDown(x, y) { isDragging = true; prevX = x; prevY = y; }
-  function onMove(x, y) {
-    if (!isDragging) return;
-    const dx = x - prevX;
-    const dy = y - prevY;
-    if (machineGroups[index]) {
-      machineGroups[index].rotation.y += dx * 0.01;
-      machineGroups[index].rotation.x += dy * 0.01;
-    }
+  let isDragging = false, prevX = 0, prevY = 0;
+  const onDown = (x, y) => { isDragging = true; prevX = x; prevY = y; };
+  const onMove = (x, y) => {
+    if (!isDragging || !groups[index]) return;
+    groups[index].rotation.y += (x - prevX) * 0.01;
+    groups[index].rotation.x += (y - prevY) * 0.01;
     prevX = x; prevY = y;
-  }
-  function onUp() { isDragging = false; }
+  };
+  const onUp = () => { isDragging = false; };
 
-  canvas.addEventListener('mousedown',  e => onDown(e.clientX, e.clientY));
-  canvas.addEventListener('mousemove',  e => onMove(e.clientX, e.clientY));
-  canvas.addEventListener('mouseup',    onUp);
-  canvas.addEventListener('mouseleave', onUp);
-
-  canvas.addEventListener('touchstart', e => { const t = e.touches[0]; onDown(t.clientX, t.clientY); }, { passive: true });
-  canvas.addEventListener('touchmove',  e => { const t = e.touches[0]; onMove(t.clientX, t.clientY); }, { passive: true });
-  canvas.addEventListener('touchend',   onUp);
+  vp.addEventListener('mousedown',  e => onDown(e.clientX, e.clientY));
+  vp.addEventListener('mousemove',  e => onMove(e.clientX, e.clientY));
+  vp.addEventListener('mouseup',    onUp);
+  vp.addEventListener('mouseleave', onUp);
+  vp.addEventListener('touchstart', e => { const t = e.touches[0]; onDown(t.clientX, t.clientY); }, { passive: true });
+  vp.addEventListener('touchmove',  e => { const t = e.touches[0]; onMove(t.clientX, t.clientY); }, { passive: true });
+  vp.addEventListener('touchend',   onUp);
 }
 
-// ─── Private: procedural geometry ────────────────────────────────────────────
+// ─── Private helpers ──────────────────────────────────────────────────────────
+
+function _resizeSharedRenderer() {
+  if (!sharedRenderer) return;
+  sharedRenderer.setSize(window.innerWidth, window.innerHeight);
+}
+
+function _wireSpecPanel() {
+  const closeBtn = document.querySelector('.spec-panel-close');
+  if (closeBtn) closeBtn.addEventListener('click', closeSpecPanel);
+  document.addEventListener('keydown', e => { if (e.key === 'Escape') closeSpecPanel(); });
+}
+
+/**
+ * On mobile: replace each .machine-canvas with a styled CSS div showing
+ * the machine name and icon — zero GPU cost.
+ */
+function _injectCSSFallbacks(viewports) {
+  const icons = ['⚙', '🔧', '🌀'];
+  viewports.forEach((vp, idx) => {
+    const canvas = vp.querySelector('.machine-canvas');
+    if (!canvas) return;
+    const fallback = document.createElement('div');
+    fallback.className = 'machine-canvas-fallback';
+    fallback.setAttribute('aria-hidden', 'true');
+    fallback.innerHTML = `<span class="mcf-icon">${icons[idx] || '⚙'}</span>`;
+    canvas.replaceWith(fallback);
+  });
+}
+
 function _buildMachineGeometry(index) {
-  const group   = new THREE.Group();
-  const metal   = new THREE.MeshStandardMaterial({ metalness: 0.6, roughness: 0.3, color: 0xdddddd });
-  const accent  = new THREE.MeshStandardMaterial({ metalness: 0.8, roughness: 0.2, color: 0x00D4FF, emissive: 0x003344 });
+  const group  = new THREE.Group();
+  const metal  = new THREE.MeshStandardMaterial({ metalness: 0.6, roughness: 0.3, color: 0xdddddd });
+  const accent = new THREE.MeshStandardMaterial({ metalness: 0.8, roughness: 0.2, color: 0x00D4FF, emissive: 0x003344 });
 
   if (index === 0) {
-    // VMC — vertical column + table + spindle
-    group.add(_mesh(new THREE.BoxGeometry(1.2, 2.5, 1.0), metal, [0, 0, 0]));
-    group.add(_mesh(new THREE.BoxGeometry(2.0, 0.15, 1.5), metal, [0, -1.1, 0.3]));
-    group.add(_mesh(new THREE.CylinderGeometry(0.12, 0.12, 1.2, 16), accent, [0, 0.8, 0]));
-    group.add(_mesh(new THREE.CylinderGeometry(0.06, 0.06, 0.4, 12), metal, [0, 0.1, 0]));
-    group.add(_mesh(new THREE.TorusGeometry(0.3, 0.04, 8, 24), accent, [0, 1.5, 0]));
+    // VMC
+    group.add(_mesh(new THREE.BoxGeometry(1.2, 2.5, 1.0), metal,  [0,    0,    0]));
+    group.add(_mesh(new THREE.BoxGeometry(2.0, 0.15, 1.5), metal, [0,   -1.1,  0.3]));
+    group.add(_mesh(new THREE.CylinderGeometry(0.12, 0.12, 1.2, 12), accent, [0, 0.8, 0]));
+    group.add(_mesh(new THREE.TorusGeometry(0.3, 0.04, 6, 16), accent, [0, 1.5, 0]));
   } else if (index === 1) {
-    // HMC — horizontal spindle
-    group.add(_mesh(new THREE.BoxGeometry(2.0, 1.8, 1.2), metal, [0, 0, 0]));
-    group.add(_mesh(new THREE.CylinderGeometry(0.14, 0.14, 1.6, 16), accent, [0, 0, 0]));
+    // HMC
+    group.add(_mesh(new THREE.BoxGeometry(2.0, 1.8, 1.2), metal,  [0, 0, 0]));
+    group.add(_mesh(new THREE.CylinderGeometry(0.14, 0.14, 1.6, 12), accent, [0, 0, 0]));
     group.rotation.z = Math.PI / 2;
-    group.add(_mesh(new THREE.BoxGeometry(0.8, 0.8, 0.15), metal, [0.9, 0, 0]));
-    group.add(_mesh(new THREE.TorusGeometry(0.25, 0.04, 8, 24), accent, [0.9, 0, 0]));
+    group.add(_mesh(new THREE.TorusGeometry(0.25, 0.04, 6, 16), accent, [0.9, 0, 0]));
   } else {
-    // VTL — vertical turning lathe (large disc + column)
-    group.add(_mesh(new THREE.CylinderGeometry(1.0, 1.0, 0.2, 32), metal, [0, -0.5, 0]));
-    group.add(_mesh(new THREE.CylinderGeometry(0.08, 0.08, 2.0, 12), accent, [0, 0.5, 0]));
+    // VTL
+    group.add(_mesh(new THREE.CylinderGeometry(1.0, 1.0, 0.2, 24), metal,  [0, -0.5, 0]));
+    group.add(_mesh(new THREE.CylinderGeometry(0.08, 0.08, 2.0, 10), accent, [0, 0.5, 0]));
     group.add(_mesh(new THREE.BoxGeometry(0.4, 1.5, 0.4), metal, [0.8, 0.2, 0]));
-    group.add(_mesh(new THREE.TorusGeometry(0.8, 0.05, 8, 32), accent, [0, -0.5, 0]));
+    group.add(_mesh(new THREE.TorusGeometry(0.8, 0.05, 6, 24), accent, [0, -0.5, 0]));
   }
 
   return group;
@@ -300,7 +349,5 @@ function _buildMachineGeometry(index) {
 function _mesh(geometry, material, position) {
   const mesh = new THREE.Mesh(geometry, material);
   mesh.position.set(...position);
-  mesh.castShadow    = true;
-  mesh.receiveShadow = true;
   return mesh;
 }
